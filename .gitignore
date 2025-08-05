@@ -1,0 +1,38 @@
+# Diretórios do Laravel
+/vendor
+/node_modules
+/public/storage
+/storage/*.key
+/storage/app/public
+/storage/framework/*
+!/storage/framework/.gitignore
+/storage/logs
+.env
+.env.*    # Arquivos de ambiente alternativos (.env.testing etc.)
+.phpunit.result.cache
+
+# IDEs
+*.sublime-project
+*.sublime-workspace
+*.phpstorm.meta.php
+.idea/
+.vscode/
+
+# Sistema Operacional
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs e caches
+*.log
+*.cache
+*.tmp
+
+# Arquivos de build e outros
+npm-debug.log
+yarn-error.log
+composer.lock
+.env.backup
+
+# Swagger docs (caso gere dinamicamente e queira ignorar os arquivos exportados)
+storage/api-docs
