@@ -16,7 +16,7 @@ Ideal para monitoramento rápido e básico de APIs, com funcionalidades de:
 
 ## Tecnologias
 
-- Laravel 10.x  
+- Laravel 8.x  
 - PHP 8.2  
 - MySQL / PostgreSQL  
 - Swagger (via l5-swagger)  
