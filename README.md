@@ -96,6 +96,21 @@ Ideal para monitoramento rápido e básico de APIs, com funcionalidades de:
     php artisan serve
     ```
 
+## Integração Contínua (CI) com GitHub Actions
+
+Este projeto possui um workflow de Integração Contínua configurado com GitHub Actions, que executa automaticamente os testes a cada *push* ou *pull request* para a branch `main`.
+
+O arquivo de configuração do workflow está em `.github/workflows/ci.yml` e realiza as seguintes etapas:
+
+- Configuração do ambiente PHP 8.2 com as extensões necessárias;
+- Uso de banco SQLite para isolamento dos testes;
+- Instalação das dependências via Composer;
+- Preparação do ambiente Laravel, incluindo criação do arquivo `.env`, geração da chave da aplicação e criação das pastas de cache;
+- Execução das migrations para preparar o banco de dados de testes;
+- Execução dos testes automatizados (unitários e de feature).
+
+Com essa automação, garantimos que todas as alterações no código sejam validadas automaticamente, mantendo a qualidade do projeto e prevenindo erros e regressões.
+
 ## Uso
 
 - Acesse a interface web:
