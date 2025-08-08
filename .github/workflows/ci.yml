@@ -19,8 +19,10 @@ jobs:
           MYSQL_USER: github
           MYSQL_PASSWORD: github
           MYSQL_ROOT_HOST: '%'
+        ports:
+          - 3306:3306                # <--- expõe porta do container no localhost do runner
         options: >-
-          --health-cmd="mysqladmin ping -h localhost -uroot -proot"
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot"
           --health-interval=10s
           --health-timeout=5s
           --health-retries=3
@@ -57,9 +59,9 @@ jobs:
           mkdir -p storage/framework/cache storage/framework/sessions storage/framework/views storage/logs
           chmod -R 0777 storage || true
 
-      - name: Wait for mysql container to appear and force mysql_native_password for user
+      - name: Wait for mysql container to appear and fix auth plugin inside container (if needed)
         run: |
-          # Espera o container do serviço aparecer e depois altera o plugin do usuário
+          # Espera o container existir
           MAX_WAIT=60
           i=0
           cid=""
@@ -67,10 +69,10 @@ jobs:
             cid=$(docker ps -q --filter ancestor=mysql:8.0 | head -n1 || true)
             if [ -n "$cid" ]; then
               echo "Found mysql container: $cid"
-              # Espera o servidor dentro do container ficar pronto e altere o plugin do user
+              # Espera o servidor interno do container ficar pronto e altera plugin do user para mysql_native_password
               docker exec "$cid" bash -lc "until mysqladmin ping -uroot -proot --silent; do sleep 1; done; \
                 mysql -uroot -proot -e \"ALTER USER 'github'@'%' IDENTIFIED WITH mysql_native_password BY 'github'; FLUSH PRIVILEGES;\" || true"
-              echo "Altered authentication plugin to mysql_native_password for github (if needed)."
+              echo "Auth plugin altered (if applicable)."
               break
             fi
             i=$((i+1))
@@ -84,43 +86,37 @@ jobs:
             exit 1
           fi
 
-      - name: Wait for MySQL to accept remote connections (from runner)
+      - name: Wait for MySQL to accept connections on localhost:3306
         run: |
           MAX_RETRIES=30
           SLEEP_SECONDS=2
           i=0
-          echo "Testing connection from runner to mysql as github/github..."
-          until mysql -h mysql -u github -pgithub -e "SELECT 1" >/dev/null 2>&1; do
+          echo "Testing connection from runner to mysql at 127.0.0.1:3306 as github/github..."
+          until mysql -h 127.0.0.1 -P 3306 -u github -pgithub -e "SELECT 1" >/dev/null 2>&1; do
             i=$((i+1))
             echo "Waiting for MySQL... attempt $i/$MAX_RETRIES"
             if [ $i -ge $MAX_RETRIES ]; then
               echo "MySQL didn't become ready in time. Gathering debug info..."
-
               echo "---- docker ps (mysql containers) ----"
               docker ps --filter ancestor=mysql:8.0 --format "ID={{.ID}} NAME={{.Names}} IMAGE={{.Image}}"
-
               container_id=$(docker ps -q --filter ancestor=mysql:8.0 | head -n1)
               if [ -n "$container_id" ]; then
                 echo "== mysql container id: $container_id =="
                 echo "---- docker logs (last 300 lines) ----"
                 docker logs --tail 300 "$container_id" || true
-
                 echo "---- mysql users (user,host,plugin) ----"
                 docker exec "$container_id" bash -c "mysql -uroot -proot -e \"SELECT user,host,plugin FROM mysql.user;\" " || true
-
                 echo "---- trying simple connection inside container as github ----"
                 docker exec "$container_id" bash -c "mysql -h localhost -ugithub -pgithub -e 'SELECT 1;'" || true
               else
                 echo "No mysql container found by docker ps"
               fi
-
               echo "---- End debug ----"
               exit 1
             fi
             sleep $SLEEP_SECONDS
           done
-
-          echo "MySQL is up and accepting connections as github!"
+          echo "MySQL is up and accepting connections on 127.0.0.1:3306!"
 
       - name: Run migrations
         run: php artisan migrate --force --no-interaction
