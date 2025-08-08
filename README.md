@@ -49,8 +49,8 @@ Ideal para monitoramento rápido e básico de APIs, com funcionalidades de:
 1. Clone o repositório:  
 
     ```bash
-    git clone https://github.com/caioeduardoit/laravel-api-log-viewer.git
-    cd laravel-api-log-viewer
+    git clone https://github.com/caioeduardoit/laravel-api-logger.git
+    cd laravel-api-logger
     ```
 
 2. Instale as dependências:
