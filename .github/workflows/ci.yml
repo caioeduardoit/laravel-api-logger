@@ -15,8 +15,8 @@ jobs:
         image: mysql:8.0
         env:
           MYSQL_ROOT_PASSWORD: root
-          MYSQL_DATABASE: testing            # <-- cria a mesma DB do .env.ci
-          MYSQL_ROOT_HOST: '%'               # <-- permite root de qualquer host (apenas para CI)
+          MYSQL_DATABASE: testing
+          MYSQL_ROOT_HOST: '%'
         options: >-
           --health-cmd="mysqladmin ping -h localhost -uroot -proot"
           --health-interval=10s
@@ -34,6 +34,11 @@ jobs:
           extensions: mbstring, bcmath, pdo, pdo_mysql
           coverage: none
 
+      - name: Install mysql client (needed for mysqladmin/mysql)
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y default-mysql-client
+
       - name: Install Composer dependencies
         run: composer install --no-interaction --prefer-dist --optimize-autoloader
 
@@ -41,7 +46,7 @@ jobs:
         run: cp .env.ci .env
 
       - name: Generate application key
-        run: php artisan key:generate
+        run: php artisan key:generate --ansi
 
       - name: Clear config cache (garante que .env seja lido)
         run: php artisan config:clear
@@ -49,16 +54,50 @@ jobs:
       - name: Create storage folders
         run: |
           mkdir -p storage/framework/cache storage/framework/sessions storage/framework/views storage/logs
+          chmod -R 0777 storage || true
 
-      - name: Wait for MySQL to be ready
+      - name: Wait for MySQL to be ready (with timeout + debug)
         run: |
+          MAX_RETRIES=30
+          SLEEP_SECONDS=2
+          i=0
+
+          if ! command -v mysqladmin >/dev/null 2>&1; then
+            echo "mysqladmin not found — aborting"
+            exit 1
+          fi
+
           until mysqladmin ping -h mysql -u root -proot --silent; do
-            echo "Waiting for MySQL..."
-            sleep 2
+            i=$((i+1))
+            echo "Waiting for MySQL... attempt $i/$MAX_RETRIES"
+            if [ $i -ge $MAX_RETRIES ]; then
+              echo "MySQL didn't become ready in time. Gathering debug info..."
+
+              echo "---- docker ps (mysql containers) ----"
+              docker ps --filter ancestor=mysql:8.0 --format "ID={{.ID}} NAME={{.Names}} IMAGE={{.Image}}"
+
+              container_id=$(docker ps -q --filter ancestor=mysql:8.0 | head -n1)
+              if [ -n "$container_id" ]; then
+                echo "== mysql container id: $container_id =="
+                echo "---- docker logs (last 200 lines) ----"
+                docker logs --tail 200 "$container_id" || true
+
+                echo "---- trying to run simple mysql query for debug ----"
+                docker exec "$container_id" mysql -uroot -proot -e "SELECT user,host FROM mysql.user LIMIT 20;" || true
+              else
+                echo "No mysql container found by docker ps"
+              fi
+
+              echo "---- End debug ----"
+              exit 1
+            fi
+            sleep $SLEEP_SECONDS
           done
 
+          echo "MySQL is up!"
+
       - name: Run migrations
-        run: php artisan migrate --force
+        run: php artisan migrate --force --no-interaction
 
       - name: Run tests
-        run: php artisan test
+        run: php artisan test --verbose
