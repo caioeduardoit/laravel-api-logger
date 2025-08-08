@@ -44,8 +44,14 @@ jobs:
       - name: Copy .env.testing
         run: cp .env.testing .env
 
-      - name: Generate application key
-        run: php artisan key:generate
+      - name: Prepare cache directory
+        run: |
+          mkdir -p bootstrap/cache
+          chmod -R 775 bootstrap/cache
+
+
+      # - name: Generate application key
+        # run: php artisan key:generate
 
       - name: Wait for MySQL to be ready
         run: |
