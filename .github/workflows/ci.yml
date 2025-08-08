@@ -57,18 +57,39 @@ jobs:
           mkdir -p storage/framework/cache storage/framework/sessions storage/framework/views storage/logs
           chmod -R 0777 storage || true
 
-      - name: Wait for MySQL to be ready (user 'github')
+      - name: Wait for mysql container to appear and force mysql_native_password for user
+        run: |
+          # Espera o container do serviço aparecer e depois altera o plugin do usuário
+          MAX_WAIT=60
+          i=0
+          cid=""
+          while [ $i -lt $MAX_WAIT ]; do
+            cid=$(docker ps -q --filter ancestor=mysql:8.0 | head -n1 || true)
+            if [ -n "$cid" ]; then
+              echo "Found mysql container: $cid"
+              # Espera o servidor dentro do container ficar pronto e altere o plugin do user
+              docker exec "$cid" bash -lc "until mysqladmin ping -uroot -proot --silent; do sleep 1; done; \
+                mysql -uroot -proot -e \"ALTER USER 'github'@'%' IDENTIFIED WITH mysql_native_password BY 'github'; FLUSH PRIVILEGES;\" || true"
+              echo "Altered authentication plugin to mysql_native_password for github (if needed)."
+              break
+            fi
+            i=$((i+1))
+            echo "Waiting for mysql container to show up... ($i/$MAX_WAIT)"
+            sleep 1
+          done
+
+          if [ -z \"$cid\" ]; then
+            echo "MYSQL container not found after $MAX_WAIT seconds."
+            docker ps -a
+            exit 1
+          fi
+
+      - name: Wait for MySQL to accept remote connections (from runner)
         run: |
           MAX_RETRIES=30
           SLEEP_SECONDS=2
           i=0
-
-          if ! command -v mysql >/dev/null 2>&1; then
-            echo "mysql client not found — aborting"
-            exit 1
-          fi
-
-          echo "Trying to connect as github/github..."
+          echo "Testing connection from runner to mysql as github/github..."
           until mysql -h mysql -u github -pgithub -e "SELECT 1" >/dev/null 2>&1; do
             i=$((i+1))
             echo "Waiting for MySQL... attempt $i/$MAX_RETRIES"
@@ -86,9 +107,6 @@ jobs:
 
                 echo "---- mysql users (user,host,plugin) ----"
                 docker exec "$container_id" bash -c "mysql -uroot -proot -e \"SELECT user,host,plugin FROM mysql.user;\" " || true
-
-                echo "---- grants for user 'github' ----"
-                docker exec "$container_id" bash -c "mysql -uroot -proot -e \"SHOW GRANTS FOR 'github'@'%';\" " || true
 
                 echo "---- trying simple connection inside container as github ----"
                 docker exec "$container_id" bash -c "mysql -h localhost -ugithub -pgithub -e 'SELECT 1;'" || true
