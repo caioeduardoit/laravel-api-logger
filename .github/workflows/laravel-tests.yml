@@ -44,10 +44,12 @@ jobs:
       - name: Copy .env.testing
         run: cp .env.testing .env
 
-      - name: Prepare cache directory
+      - name: Prepare Laravel cache folders
         run: |
           mkdir -p bootstrap/cache
-          chmod -R 775 bootstrap/cache
+          mkdir -p storage/framework/cache/data
+          mkdir -p storage/framework/views
+          chmod -R 775 bootstrap/cache storage/framework/cache storage/framework/views
 
 
       # - name: Generate application key
