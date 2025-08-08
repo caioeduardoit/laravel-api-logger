@@ -16,6 +16,8 @@ jobs:
         env:
           MYSQL_ROOT_PASSWORD: root
           MYSQL_DATABASE: testing
+          MYSQL_USER: github
+          MYSQL_PASSWORD: github
           MYSQL_ROOT_HOST: '%'
         options: >-
           --health-cmd="mysqladmin ping -h localhost -uroot -proot"
@@ -34,7 +36,7 @@ jobs:
           extensions: mbstring, bcmath, pdo, pdo_mysql
           coverage: none
 
-      - name: Install mysql client (needed for mysqladmin/mysql)
+      - name: Install mysql client (needed for checks)
         run: |
           sudo apt-get update -y
           sudo apt-get install -y default-mysql-client
@@ -45,29 +47,29 @@ jobs:
       - name: Prepare environment file
         run: cp .env.ci .env
 
-      - name: Generate application key
-        run: php artisan key:generate --ansi
-
-      - name: Clear config cache (garante que .env seja lido)
-        run: php artisan config:clear
+      - name: Generate application key & clear config
+        run: |
+          php artisan key:generate --ansi
+          php artisan config:clear
 
       - name: Create storage folders
         run: |
           mkdir -p storage/framework/cache storage/framework/sessions storage/framework/views storage/logs
           chmod -R 0777 storage || true
 
-      - name: Wait for MySQL to be ready (with timeout + debug)
+      - name: Wait for MySQL to be ready (user 'github')
         run: |
           MAX_RETRIES=30
           SLEEP_SECONDS=2
           i=0
 
-          if ! command -v mysqladmin >/dev/null 2>&1; then
-            echo "mysqladmin not found — aborting"
+          if ! command -v mysql >/dev/null 2>&1; then
+            echo "mysql client not found — aborting"
             exit 1
           fi
 
-          until mysqladmin ping -h mysql -u root -proot --silent; do
+          echo "Trying to connect as github/github..."
+          until mysql -h mysql -u github -pgithub -e "SELECT 1" >/dev/null 2>&1; do
             i=$((i+1))
             echo "Waiting for MySQL... attempt $i/$MAX_RETRIES"
             if [ $i -ge $MAX_RETRIES ]; then
@@ -79,11 +81,17 @@ jobs:
               container_id=$(docker ps -q --filter ancestor=mysql:8.0 | head -n1)
               if [ -n "$container_id" ]; then
                 echo "== mysql container id: $container_id =="
-                echo "---- docker logs (last 200 lines) ----"
-                docker logs --tail 200 "$container_id" || true
+                echo "---- docker logs (last 300 lines) ----"
+                docker logs --tail 300 "$container_id" || true
 
-                echo "---- trying to run simple mysql query for debug ----"
-                docker exec "$container_id" mysql -uroot -proot -e "SELECT user,host FROM mysql.user LIMIT 20;" || true
+                echo "---- mysql users (user,host,plugin) ----"
+                docker exec "$container_id" bash -c "mysql -uroot -proot -e \"SELECT user,host,plugin FROM mysql.user;\" " || true
+
+                echo "---- grants for user 'github' ----"
+                docker exec "$container_id" bash -c "mysql -uroot -proot -e \"SHOW GRANTS FOR 'github'@'%';\" " || true
+
+                echo "---- trying simple connection inside container as github ----"
+                docker exec "$container_id" bash -c "mysql -h localhost -ugithub -pgithub -e 'SELECT 1;'" || true
               else
                 echo "No mysql container found by docker ps"
               fi
@@ -94,7 +102,7 @@ jobs:
             sleep $SLEEP_SECONDS
           done
 
-          echo "MySQL is up!"
+          echo "MySQL is up and accepting connections as github!"
 
       - name: Run migrations
         run: php artisan migrate --force --no-interaction
