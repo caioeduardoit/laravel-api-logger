@@ -10,6 +10,12 @@ jobs:
   laravel-tests:
     runs-on: ubuntu-latest
 
+    # Força as vars no job inteiro (garante que todos os passos herdem)
+    env:
+      DB_CONNECTION: sqlite
+      DB_DATABASE: ./database/database.sqlite
+      APP_ENV: testing
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -30,19 +36,40 @@ jobs:
       - name: Prepare environment file for CI (SQLite)
         run: cp .env.ci .env
 
+      - name: Disable phpunit.xml overrides (if present)
+        run: |
+          if [ -f phpunit.xml ]; then
+            mv phpunit.xml phpunit.xml.ci_backup
+            echo "Renamed phpunit.xml -> phpunit.xml.ci_backup"
+          fi
+          if [ -f phpunit.xml.dist ]; then
+            mv phpunit.xml.dist phpunit.xml.dist.ci_backup
+            echo "Renamed phpunit.xml.dist -> phpunit.xml.dist.ci_backup"
+          fi
+
       - name: Create sqlite database file
         run: |
           mkdir -p database
           touch database/database.sqlite
           chmod -R 0777 database || true
 
-      - name: Generate application key & clear config
+      - name: Generate app key & clear caches
         run: |
           php artisan key:generate --ansi
           php artisan config:clear
+          php artisan cache:clear
 
-      - name: Run migrations (uses sqlite file)
-        run: php artisan migrate --force
+      - name: Debug DB config used by Laravel (helpful)
+        run: |
+          php -r "require 'vendor/autoload.php'; \$app=require 'bootstrap/app.php'; \$kernel=\$app->make(Illuminate\Contracts\Console\Kernel::class); \$kernel->bootstrap();
+          echo 'ENV DB_CONNECTION=' . getenv('DB_CONNECTION') . PHP_EOL;
+          echo 'config(database.default)=' . config('database.default') . PHP_EOL;
+          echo 'sqlite.database config=' . config('database.connections.sqlite.database') . PHP_EOL;
+          echo 'DB env from shell:' . PHP_EOL; print_r(getenv('DB_CONNECTION'));
+          "
+
+      - name: Run migrations (using job env vars)
+        run: php artisan migrate --force --no-interaction
 
       - name: Run tests
         run: php artisan test --verbose
